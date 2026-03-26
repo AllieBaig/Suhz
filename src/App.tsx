@@ -9,13 +9,36 @@ import {
   Activity, 
   Zap, 
   Headphones,
-  Info
+  Info,
+  RefreshCw,
+  Trash2,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Visualizer } from './components/Visualizer';
 
 // Types
 type WaveformType = 'sine' | 'square' | 'sawtooth' | 'triangle';
+
+interface AppSettings {
+  baseFreq: number;
+  binauralFreq: number;
+  waveform: WaveformType;
+  masterVolume: number;
+  toneVolume: number;
+  subliminalVolume: number;
+}
+
+const STORAGE_KEY = 'subliminal_player_settings';
+
+const DEFAULT_SETTINGS: AppSettings = {
+  baseFreq: 440,
+  binauralFreq: 4,
+  waveform: 'sine',
+  masterVolume: 0.5,
+  toneVolume: 0.3,
+  subliminalVolume: 0.7,
+};
 
 export default function App() {
   // Audio Context & Nodes
@@ -31,19 +54,23 @@ export default function App() {
 
   // State
   const [isPlaying, setIsPlaying] = useState(false);
-  const [baseFreq, setBaseFreq] = useState(440);
-  const [binauralFreq, setBinauralFreq] = useState(4); // 4Hz = Theta (Deep relaxation)
-  const [waveform, setWaveform] = useState<WaveformType>('sine');
-  const [masterVolume, setMasterVolume] = useState(0.5);
-  const [toneVolume, setToneVolume] = useState(0.3);
-  const [subliminalVolume, setSubliminalVolume] = useState(0.7);
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+  });
   const [fileName, setFileName] = useState<string | null>(null);
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Calculated Frequencies
-  const leftFreq = baseFreq;
-  const rightFreq = baseFreq + binauralFreq;
+  const leftFreq = settings.baseFreq;
+  const rightFreq = settings.baseFreq + settings.binauralFreq;
+
+  // Persist settings
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  }, [settings]);
 
   const initAudio = useCallback(() => {
     if (!audioCtxRef.current) {
@@ -51,7 +78,7 @@ export default function App() {
       
       // Master Gain
       masterGainRef.current = audioCtxRef.current.createGain();
-      masterGainRef.current.gain.value = masterVolume;
+      masterGainRef.current.gain.value = settings.masterVolume;
       masterGainRef.current.connect(audioCtxRef.current.destination);
 
       // Tone Path
@@ -60,8 +87,8 @@ export default function App() {
       leftGainRef.current = audioCtxRef.current.createGain();
       rightGainRef.current = audioCtxRef.current.createGain();
       
-      leftGainRef.current.gain.value = toneVolume;
-      rightGainRef.current.gain.value = toneVolume;
+      leftGainRef.current.gain.value = settings.toneVolume;
+      rightGainRef.current.gain.value = settings.toneVolume;
 
       // Connect tones to specific channels
       leftGainRef.current.connect(mergerRef.current, 0, 0);
@@ -71,10 +98,25 @@ export default function App() {
 
       // Subliminal Path
       subliminalGainRef.current = audioCtxRef.current.createGain();
-      subliminalGainRef.current.gain.value = subliminalVolume;
+      subliminalGainRef.current.gain.value = settings.subliminalVolume;
       subliminalGainRef.current.connect(masterGainRef.current);
     }
-  }, [masterVolume, toneVolume, subliminalVolume]);
+  }, [settings]);
+
+  // Handle iOS AudioContext suspension
+  useEffect(() => {
+    const resumeAudio = () => {
+      if (audioCtxRef.current?.state === 'suspended') {
+        audioCtxRef.current.resume();
+      }
+    };
+    window.addEventListener('click', resumeAudio);
+    window.addEventListener('touchstart', resumeAudio);
+    return () => {
+      window.removeEventListener('click', resumeAudio);
+      window.removeEventListener('touchstart', resumeAudio);
+    };
+  }, []);
 
   const startTones = () => {
     if (!audioCtxRef.current) return;
@@ -85,8 +127,8 @@ export default function App() {
     leftOscRef.current = audioCtxRef.current.createOscillator();
     rightOscRef.current = audioCtxRef.current.createOscillator();
 
-    leftOscRef.current.type = waveform;
-    rightOscRef.current.type = waveform;
+    leftOscRef.current.type = settings.waveform;
+    rightOscRef.current.type = settings.waveform;
 
     leftOscRef.current.frequency.setValueAtTime(leftFreq, audioCtxRef.current.currentTime);
     rightOscRef.current.frequency.setValueAtTime(rightFreq, audioCtxRef.current.currentTime);
@@ -163,22 +205,22 @@ export default function App() {
   // Update volumes in real-time
   useEffect(() => {
     if (masterGainRef.current && audioCtxRef.current) {
-      masterGainRef.current.gain.setTargetAtTime(masterVolume, audioCtxRef.current.currentTime, 0.1);
+      masterGainRef.current.gain.setTargetAtTime(settings.masterVolume, audioCtxRef.current.currentTime, 0.1);
     }
-  }, [masterVolume]);
+  }, [settings.masterVolume]);
 
   useEffect(() => {
     if (leftGainRef.current && rightGainRef.current && audioCtxRef.current) {
-      leftGainRef.current.gain.setTargetAtTime(toneVolume, audioCtxRef.current.currentTime, 0.1);
-      rightGainRef.current.gain.setTargetAtTime(toneVolume, audioCtxRef.current.currentTime, 0.1);
+      leftGainRef.current.gain.setTargetAtTime(settings.toneVolume, audioCtxRef.current.currentTime, 0.1);
+      rightGainRef.current.gain.setTargetAtTime(settings.toneVolume, audioCtxRef.current.currentTime, 0.1);
     }
-  }, [toneVolume]);
+  }, [settings.toneVolume]);
 
   useEffect(() => {
     if (subliminalGainRef.current && audioCtxRef.current) {
-      subliminalGainRef.current.gain.setTargetAtTime(subliminalVolume, audioCtxRef.current.currentTime, 0.1);
+      subliminalGainRef.current.gain.setTargetAtTime(settings.subliminalVolume, audioCtxRef.current.currentTime, 0.1);
     }
-  }, [subliminalVolume]);
+  }, [settings.subliminalVolume]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -196,6 +238,21 @@ export default function App() {
     }
   };
 
+  const refreshApp = () => {
+    window.location.reload();
+  };
+
+  const clearCache = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setSettings(DEFAULT_SETTINGS);
+    alert('Settings cleared. App will refresh.');
+    window.location.reload();
+  };
+
+  const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
   return (
     <div className="min-h-screen p-4 md:p-8 flex flex-col items-center justify-center gap-8 max-w-4xl mx-auto">
       {/* Header */}
@@ -204,13 +261,78 @@ export default function App() {
           <h1 className="text-4xl font-bold tracking-tighter uppercase italic font-mono">Subliminal Player</h1>
           <p className="text-xs text-[#8e9299] font-mono tracking-widest uppercase mt-1">Binaural & Frequency Generator v1.0</p>
         </div>
-        <button 
-          onClick={() => setShowInfo(!showInfo)}
-          className="p-2 hover:bg-[#2a2b2e] rounded-full transition-colors"
-        >
-          <Info size={20} className="text-[#8e9299]" />
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="p-2 hover:bg-[#2a2b2e] rounded-full transition-colors"
+          >
+            <Settings size={20} className="text-[#8e9299]" />
+          </button>
+          <button 
+            onClick={() => setShowInfo(!showInfo)}
+            className="p-2 hover:bg-[#2a2b2e] rounded-full transition-colors"
+          >
+            <Info size={20} className="text-[#8e9299]" />
+          </button>
+        </div>
       </header>
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass-panel p-8 w-full max-w-md relative"
+            >
+              <button 
+                onClick={() => setShowSettings(false)}
+                className="absolute top-4 right-4 p-2 hover:bg-[#2a2b2e] rounded-full transition-colors"
+              >
+                <X size={20} className="text-[#8e9299]" />
+              </button>
+              
+              <h2 className="text-xl font-bold uppercase tracking-widest mb-6 flex items-center gap-2">
+                <Settings size={20} className="text-blue-500" /> System Settings
+              </h2>
+
+              <div className="space-y-6">
+                <div>
+                  <p className="text-xs text-[#8e9299] uppercase tracking-widest mb-3">Application Control</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button 
+                      onClick={refreshApp}
+                      className="flex items-center justify-center gap-2 p-4 border border-[#2a2b2e] rounded-lg hover:bg-white/5 transition-colors text-sm font-mono uppercase"
+                    >
+                      <RefreshCw size={16} /> Refresh
+                    </button>
+                    <button 
+                      onClick={clearCache}
+                      className="flex items-center justify-center gap-2 p-4 border border-red-900/50 rounded-lg hover:bg-red-900/20 transition-colors text-sm font-mono uppercase text-red-400"
+                    >
+                      <Trash2 size={16} /> Clear Cache
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+                  <p className="text-[10px] text-blue-400 uppercase tracking-widest leading-relaxed">
+                    Settings are automatically saved to your device's local storage. 
+                    The app is standalone-ready for home screen installation.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showInfo && (
@@ -270,8 +392,8 @@ export default function App() {
                     min="0" 
                     max="1" 
                     step="0.01" 
-                    value={masterVolume}
-                    onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
+                    value={settings.masterVolume}
+                    onChange={(e) => updateSetting('masterVolume', parseFloat(e.target.value))}
                     className="w-32"
                   />
                   <Volume2 size={14} className="text-[#8e9299]" />
@@ -309,15 +431,15 @@ export default function App() {
             <div className="mt-4">
               <div className="flex justify-between mb-2">
                 <span className="text-[10px] font-mono uppercase text-[#8e9299]">Track Volume</span>
-                <span className="text-[10px] font-mono">{Math.round(subliminalVolume * 100)}%</span>
+                <span className="text-[10px] font-mono">{Math.round(settings.subliminalVolume * 100)}%</span>
               </div>
               <input 
                 type="range" 
                 min="0" 
                 max="1" 
                 step="0.01" 
-                value={subliminalVolume}
-                onChange={(e) => setSubliminalVolume(parseFloat(e.target.value))}
+                value={settings.subliminalVolume}
+                onChange={(e) => updateSetting('subliminalVolume', parseFloat(e.target.value))}
                 className="w-full"
               />
             </div>
@@ -328,7 +450,7 @@ export default function App() {
         <div className="flex flex-col gap-6">
           <div className="glass-panel p-6">
             <h3 className="text-xs font-mono uppercase tracking-widest mb-6 flex items-center gap-2">
-              <Settings size={14} className="text-blue-500" /> Frequency Generator
+              <Activity size={14} className="text-blue-500" /> Frequency Generator
             </h3>
 
             <div className="space-y-8">
@@ -336,15 +458,15 @@ export default function App() {
               <div>
                 <div className="flex justify-between mb-2">
                   <span className="text-[10px] font-mono uppercase text-[#8e9299]">Base Frequency (Left Ear)</span>
-                  <span className="text-sm font-mono text-blue-500">{baseFreq} Hz</span>
+                  <span className="text-sm font-mono text-blue-500">{settings.baseFreq} Hz</span>
                 </div>
                 <input 
                   type="range" 
                   min="20" 
                   max="1000" 
                   step="1" 
-                  value={baseFreq}
-                  onChange={(e) => setBaseFreq(parseInt(e.target.value))}
+                  value={settings.baseFreq}
+                  onChange={(e) => updateSetting('baseFreq', parseInt(e.target.value))}
                   className="w-full"
                 />
                 <div className="flex justify-between mt-1">
@@ -357,15 +479,15 @@ export default function App() {
               <div>
                 <div className="flex justify-between mb-2">
                   <span className="text-[10px] font-mono uppercase text-[#8e9299]">Binaural Offset (Beat)</span>
-                  <span className="text-sm font-mono text-blue-500">{binauralFreq} Hz</span>
+                  <span className="text-sm font-mono text-blue-500">{settings.binauralFreq} Hz</span>
                 </div>
                 <input 
                   type="range" 
                   min="0.1" 
                   max="40" 
                   step="0.1" 
-                  value={binauralFreq}
-                  onChange={(e) => setBinauralFreq(parseFloat(e.target.value))}
+                  value={settings.binauralFreq}
+                  onChange={(e) => updateSetting('binauralFreq', parseFloat(e.target.value))}
                   className="w-full"
                 />
                 <div className="flex justify-between mt-1">
@@ -386,8 +508,8 @@ export default function App() {
                 <div className="text-right">
                   <p className="text-[9px] font-mono uppercase text-[#8e9299]">Waveform</p>
                   <select 
-                    value={waveform}
-                    onChange={(e) => setWaveform(e.target.value as WaveformType)}
+                    value={settings.waveform}
+                    onChange={(e) => updateSetting('waveform', e.target.value as WaveformType)}
                     className="bg-transparent text-xs font-mono border-none focus:ring-0 cursor-pointer text-blue-500"
                   >
                     <option value="sine">Sine</option>
@@ -402,15 +524,15 @@ export default function App() {
               <div>
                 <div className="flex justify-between mb-2">
                   <span className="text-[10px] font-mono uppercase text-[#8e9299]">Tone Intensity</span>
-                  <span className="text-[10px] font-mono">{Math.round(toneVolume * 100)}%</span>
+                  <span className="text-[10px] font-mono">{Math.round(settings.toneVolume * 100)}%</span>
                 </div>
                 <input 
                   type="range" 
                   min="0" 
                   max="1" 
                   step="0.01" 
-                  value={toneVolume}
-                  onChange={(e) => setToneVolume(parseFloat(e.target.value))}
+                  value={settings.toneVolume}
+                  onChange={(e) => updateSetting('toneVolume', parseFloat(e.target.value))}
                   className="w-full"
                 />
               </div>
@@ -429,9 +551,9 @@ export default function App() {
               ].map((preset) => (
                 <button
                   key={preset.name}
-                  onClick={() => setBinauralFreq(preset.freq)}
+                  onClick={() => updateSetting('binauralFreq', preset.freq)}
                   className={`p-3 rounded border text-left transition-all ${
-                    binauralFreq === preset.freq 
+                    settings.binauralFreq === preset.freq 
                     ? 'border-blue-500 bg-blue-500/10' 
                     : 'border-[#2a2b2e] hover:border-[#444]'
                   }`}

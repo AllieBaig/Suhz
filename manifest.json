@@ -1,0 +1,21 @@
+{
+  "name": "Subliminal Player",
+  "short_name": "Subliminal",
+  "description": "Professional audio tool for subliminal playback and binaural beats.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0b",
+  "theme_color": "#0a0a0b",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/audio/192/192",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://picsum.photos/seed/audio/512/512",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
